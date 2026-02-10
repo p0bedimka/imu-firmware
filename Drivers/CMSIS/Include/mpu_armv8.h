@@ -264,7 +264,7 @@ __STATIC_INLINE void ARM_MPU_SetRegion_NS(uint32_t rnr, uint32_t rbar, uint32_t 
 
 /** Memcopy with strictly ordered memory access, e.g. for register targets.
 * \param dst Destination data is copied to.
-* \param Src Source data is copied from.
+* \param src Source data is copied from.
 * \param len Amount of data words to be copied.
 */
 __STATIC_INLINE void orderedCpy(volatile uint32_t* dst, const uint32_t* __RESTRICT src, uint32_t len)
