@@ -19,33 +19,21 @@
 
 #include <stdbool.h>
 
-#include "cmsis_os.h"
-#include "usb_device.h"
-
 #include "mpu6050.h"
 
 I2C_HandleTypeDef hi2c1;
 RTC_HandleTypeDef hrtc;
 UART_HandleTypeDef huart1;
 
-/* Definitions for defaultTask */
-osThreadId_t defaultTaskHandle;
-const osThreadAttr_t defaultTask_attributes = {
-    .name = "defaultTask",
-    .stack_size = 128 * 4,
-    .priority = (osPriority_t) osPriorityNormal,
-};
-
 MPU6050_t mpu6050;
 
-/* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void LED_Init(void);
 static void I2C1_Init(void);
 static void RTC_Init(void);
 static void USART1_Init(void);
-static void Delay_Ms(uint32_t milliseconds);
-void StartDefaultTask(void *argument);
+
+static void loop(void);
 
 /**
   * @brief  The application entry point.
@@ -59,8 +47,8 @@ int main(void) {
     I2C1_Init();
     RTC_Init();
     USART1_Init();
-    MX_USB_DEVICE_Init();
 
+    printf("Start of IMU initialization\r\n");
     mpu6050.I2Cx = &hi2c1;
     mpu6050.addr = MPU6050_DEFAULT_ADDRESS;
 
@@ -86,11 +74,30 @@ int main(void) {
 
     HAL_GPIO_WritePin(LED, GPIO_PIN_SET);
 
-    osKernelInitialize();
+    loop();
+}
 
-    defaultTaskHandle = osThreadNew(StartDefaultTask, NULL, &defaultTask_attributes);
-
-    osKernelStart();
+/**
+  * @brief  Function implementing the defaultTask thread.
+  * @retval None
+  */
+static void loop(void) {
+    float acc_x, acc_y, acc_z;
+    float gyr_x, gyr_y, gyr_z;
+    float temperature;
+    // ReSharper disable once CppDFAEndlessLoop
+    while (true) {
+        if (MPU6050_GetIntDataReadyStatus(&mpu6050) == true) {
+            MPU6050_GetAcceleration(&mpu6050, &acc_x, &acc_y, &acc_z);
+            MPU6050_GetRotation(&mpu6050, &gyr_x, &gyr_y, &gyr_z);
+            temperature = MPU6050_GetTemperature(&mpu6050);
+            printf("acc x = %0.3f, y = %0.3f, z = %0.3f; gyr x = %0.3f, y = %0.3f, z = %0.3f; temperature = %0.3f\r\n",
+                    acc_x, acc_y, acc_z, gyr_x, gyr_y, gyr_z, temperature);
+        }
+        HAL_GPIO_WritePin(LED, GPIO_PIN_SET);
+        LED_GPIO_Port->BSRR = (uint32_t)LED_Pin << 16u;
+        HAL_Delay(200);
+    }
 }
 
 /**
@@ -144,9 +151,8 @@ static void I2C1_Init(void) {
     hi2c1.Init.OwnAddress2 = 0;
     hi2c1.Init.GeneralCallMode = I2C_GENERALCALL_DISABLE;
     hi2c1.Init.NoStretchMode = I2C_NOSTRETCH_DISABLE;
-    if (HAL_I2C_Init(&hi2c1) != HAL_OK) {
+    if (HAL_I2C_Init(&hi2c1) != HAL_OK)
         Error_Handler();
-    }
 }
 
 /**
@@ -160,25 +166,21 @@ static void RTC_Init(void) {
     hrtc.Instance = RTC;
     hrtc.Init.AsynchPrediv = RTC_AUTO_1_SECOND;
     hrtc.Init.OutPut = RTC_OUTPUTSOURCE_ALARM;
-    if (HAL_RTC_Init(&hrtc) != HAL_OK) {
+    if (HAL_RTC_Init(&hrtc) != HAL_OK)
         Error_Handler();
-    }
 
     sTime.Hours = 0x0;
     sTime.Minutes = 0x0;
     sTime.Seconds = 0x0;
-
-    if (HAL_RTC_SetTime(&hrtc, &sTime, RTC_FORMAT_BCD) != HAL_OK) {
+    if (HAL_RTC_SetTime(&hrtc, &sTime, RTC_FORMAT_BCD) != HAL_OK)
         Error_Handler();
-    }
+
     DateToUpdate.WeekDay = RTC_WEEKDAY_MONDAY;
     DateToUpdate.Month = RTC_MONTH_JANUARY;
     DateToUpdate.Date = 0x1;
     DateToUpdate.Year = 0x0;
-
-    if (HAL_RTC_SetDate(&hrtc, &DateToUpdate, RTC_FORMAT_BCD) != HAL_OK) {
+    if (HAL_RTC_SetDate(&hrtc, &DateToUpdate, RTC_FORMAT_BCD) != HAL_OK)
         Error_Handler();
-    }
 }
 
 /**
@@ -194,9 +196,8 @@ static void USART1_Init(void) {
     huart1.Init.Mode = UART_MODE_TX_RX;
     huart1.Init.HwFlowCtl = UART_HWCONTROL_NONE;
     huart1.Init.OverSampling = UART_OVERSAMPLING_16;
-    if (HAL_UART_Init(&huart1) != HAL_OK) {
+    if (HAL_UART_Init(&huart1) != HAL_OK)
         Error_Handler();
-    }
 }
 
 /**
@@ -218,41 +219,6 @@ static void LED_Init(void) {
 }
 
 /**
-  * @brief  Function implementing the defaultTask thread.
-  * @param  argument: Not used
-  * @retval None
-  */
-void StartDefaultTask(void *argument) {
-    float acc_x, acc_y, acc_z;
-    float gyr_x, gyr_y, gyr_z;
-    float temperature;
-    // ReSharper disable once CppDFAEndlessLoop
-    while (true) {
-        if (MPU6050_GetIntDataReadyStatus(&mpu6050) == true) {
-            MPU6050_GetAcceleration(&mpu6050, &acc_x, &acc_y, &acc_z);
-            MPU6050_GetRotation(&mpu6050, &gyr_x, &gyr_y, &gyr_z);
-            temperature = MPU6050_GetTemperature(&mpu6050);
-            printf("acc x = %0.3f, y = %0.3f, z = %0.3f; gyr x = %0.3f, y = %0.3f, z = %0.3f; temperature = %0.3f\r\n",
-                    acc_x, acc_y, acc_z, gyr_x, gyr_y, gyr_z, temperature);
-        }
-        osDelay(500);
-    }
-}
-
-/**
-  * @brief  Period elapsed callback in non blocking mode
-  * @note   This function is called  when TIM6 interrupt took place, inside
-  * HAL_TIM_IRQHandler(). It makes a direct call to HAL_IncTick() to increment
-  * a global variable "uwTick" used as application time base.
-  * @param  htim : TIM handle
-  * @retval None
-  */
-void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
-    if (htim->Instance == TIM6)
-        HAL_IncTick();
-}
-
-/**
   * @brief  This function is executed in case of error occurrence.
   * @retval None
   */
@@ -267,7 +233,7 @@ void Error_Handler(void) {
     NVIC_SystemReset();
 }
 
-static void Delay_Ms(uint32_t milliseconds) {
+void Delay_Ms(uint32_t milliseconds) {
     uint32_t cycles = (SystemCoreClock / 1000) * milliseconds;
 
     if (CoreDebug->DEMCR & CoreDebug_DEMCR_TRCENA_Msk) {

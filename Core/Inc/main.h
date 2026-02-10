@@ -30,6 +30,8 @@ extern "C" {
 
 void Error_Handler(void);
 
+void Delay_Ms(uint32_t milliseconds);
+
 #define LED_Pin           GPIO_PIN_13
 #define LED_GPIO_Port     GPIOC
 #define LED               LED_GPIO_Port, LED_Pin
