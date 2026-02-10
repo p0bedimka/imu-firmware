@@ -48,15 +48,8 @@ endif ()
 
 include_directories(
         Core/Inc
-        USB_DEVICE/App
-        USB_DEVICE/Target
         Drivers/STM32F1xx_HAL_Driver/Inc
         Drivers/STM32F1xx_HAL_Driver/Inc/Legacy
-        Middlewares/Third_Party/FreeRTOS/Source/include
-        Middlewares/Third_Party/FreeRTOS/Source/CMSIS_RTOS_V2
-        Middlewares/Third_Party/FreeRTOS/Source/portable/GCC/ARM_CM3
-        Middlewares/ST/STM32_USB_Device_Library/Core/Inc
-        Middlewares/ST/STM32_USB_Device_Library/Class/CustomHID/Inc
         Drivers/CMSIS/Device/ST/STM32F1xx/Include
         Drivers/CMSIS/Include
 )
@@ -71,9 +64,7 @@ add_subdirectory(Lib/mpu6050)
 
 file(GLOB_RECURSE SOURCES
         "Core/*.*"
-        "Middlewares/*.*"
         "Drivers/*.*"
-        "USB_DEVICE/*.*"
 )
 
 set(LINKER_SCRIPT ${CMAKE_SOURCE_DIR}/STM32F103RCTX_FLASH.ld)

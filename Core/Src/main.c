@@ -42,7 +42,6 @@ static void loop(void);
 int main(void) {
     HAL_Init();
     SystemClock_Config();
-
     LED_Init();
     I2C1_Init();
     RTC_Init();
@@ -94,8 +93,6 @@ static void loop(void) {
             printf("acc x = %0.3f, y = %0.3f, z = %0.3f; gyr x = %0.3f, y = %0.3f, z = %0.3f; temperature = %0.3f\r\n",
                     acc_x, acc_y, acc_z, gyr_x, gyr_y, gyr_z, temperature);
         }
-        HAL_GPIO_WritePin(LED, GPIO_PIN_SET);
-        LED_GPIO_Port->BSRR = (uint32_t)LED_Pin << 16u;
         HAL_Delay(200);
     }
 }
