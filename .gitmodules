@@ -1,0 +1,3 @@
+[submodule "Lib/mpu6050"]
+	path = Lib/mpu6050
+	url = https://github.com/p0bedimka/mpu6050.git

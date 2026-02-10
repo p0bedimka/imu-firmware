@@ -1,0 +1,12 @@
+# STM32CubeIDE
+.settings/
+Debug/
+*.launch
+Release/
+
+# CLION
+.idea/
+cmake-build*/
+.clang-format
+CMakeLists_template.txt
+.run
