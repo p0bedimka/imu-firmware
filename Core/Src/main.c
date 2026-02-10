@@ -21,16 +21,17 @@
 
 #include "mpu6050.h"
 
+#include "rtc.h"
+
 I2C_HandleTypeDef hi2c1;
-RTC_HandleTypeDef hrtc;
 UART_HandleTypeDef huart1;
 
 MPU6050_t mpu6050;
 
-void SystemClock_Config(void);
-static void LED_Init(void);
+static void Led_Init(void);
+static void SystemClock_Config(void);
 static void I2C1_Init(void);
-static void RTC_Init(void);
+static void RTC_TIM2_Init(void);
 static void USART1_Init(void);
 
 static void loop(void);
@@ -41,13 +42,13 @@ static void loop(void);
   */
 int main(void) {
     HAL_Init();
+    Led_Init();
     SystemClock_Config();
-    LED_Init();
+
     I2C1_Init();
-    RTC_Init();
+    RTC_TIM2_Init();
     USART1_Init();
 
-    printf("Start of IMU initialization\r\n");
     mpu6050.I2Cx = &hi2c1;
     mpu6050.addr = MPU6050_DEFAULT_ADDRESS;
 
@@ -84,24 +85,44 @@ static void loop(void) {
     float acc_x, acc_y, acc_z;
     float gyr_x, gyr_y, gyr_z;
     float temperature;
+    uint64_t time;
     // ReSharper disable once CppDFAEndlessLoop
     while (true) {
         if (MPU6050_GetIntDataReadyStatus(&mpu6050) == true) {
             MPU6050_GetAcceleration(&mpu6050, &acc_x, &acc_y, &acc_z);
             MPU6050_GetRotation(&mpu6050, &gyr_x, &gyr_y, &gyr_z);
             temperature = MPU6050_GetTemperature(&mpu6050);
-            printf("acc x = %0.3f, y = %0.3f, z = %0.3f; gyr x = %0.3f, y = %0.3f, z = %0.3f; temperature = %0.3f\r\n",
-                    acc_x, acc_y, acc_z, gyr_x, gyr_y, gyr_z, temperature);
+            time = RTC_GetUnixTimeMs();
+            printf("time = %llu, acc x = %0.3f, y = %0.3f, z = %0.3f; gyr x = %0.3f, y = %0.3f, z = %0.3f; temperature = %0.3f\r\n",
+                    time, acc_x, acc_y, acc_z, gyr_x, gyr_y, gyr_z, temperature);
         }
         HAL_Delay(200);
     }
 }
 
 /**
+  * @brief GPIO Initialization Function
+  * @retval None
+  */
+static void Led_Init(void) {
+    GPIO_InitTypeDef GPIO_InitStruct = {0};
+
+    __HAL_RCC_GPIOC_CLK_ENABLE();
+
+    HAL_GPIO_WritePin(LED, GPIO_PIN_RESET);
+
+    GPIO_InitStruct.Pin = LED_Pin;
+    GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+    GPIO_InitStruct.Pull = GPIO_PULLDOWN;
+    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+    HAL_GPIO_Init(LED_GPIO_Port, &GPIO_InitStruct);
+}
+
+/**
   * @brief System Clock Configuration
   * @retval None
   */
-void SystemClock_Config(void) {
+static void SystemClock_Config(void) {
     RCC_OscInitTypeDef RCC_OscInitStruct = {0};
     RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
     RCC_PeriphCLKInitTypeDef PeriphClkInit = {0};
@@ -152,32 +173,40 @@ static void I2C1_Init(void) {
         Error_Handler();
 }
 
-/**
-  * @brief RTC Initialization Function
-  * @retval None
-  */
-static void RTC_Init(void) {
-    RTC_TimeTypeDef sTime = {0};
-    RTC_DateTypeDef DateToUpdate = {0};
+static void RTC_TIM2_Init(void) {
+    tm time = {
+        45,
+        30,
+        12,
+        15,
+        10,
+        2023 - 1900
+    };
 
-    hrtc.Instance = RTC;
-    hrtc.Init.AsynchPrediv = RTC_AUTO_1_SECOND;
-    hrtc.Init.OutPut = RTC_OUTPUTSOURCE_ALARM;
-    if (HAL_RTC_Init(&hrtc) != HAL_OK)
-        Error_Handler();
+    RTC_Initialization(&time);
 
-    sTime.Hours = 0x0;
-    sTime.Minutes = 0x0;
-    sTime.Seconds = 0x0;
-    if (HAL_RTC_SetTime(&hrtc, &sTime, RTC_FORMAT_BCD) != HAL_OK)
-        Error_Handler();
+    RCC->APB1ENR |= RCC_APB1ENR_TIM2EN;
 
-    DateToUpdate.WeekDay = RTC_WEEKDAY_MONDAY;
-    DateToUpdate.Month = RTC_MONTH_JANUARY;
-    DateToUpdate.Date = 0x1;
-    DateToUpdate.Year = 0x0;
-    if (HAL_RTC_SetDate(&hrtc, &DateToUpdate, RTC_FORMAT_BCD) != HAL_OK)
-        Error_Handler();
+    // Расчет для 1 мс при 72 МГц (подстройте под вашу частоту!)
+    // Prescaler = (SystemCoreClock / 1000000) - 1 = для 1 МГц
+    // 72MHz / 7200 = 10 kHz (0.1 мс)
+    TIM2->PSC = 7200 - 1;
+
+    // Период для 1 мс: 10 отсчетов по 0.1 мс
+    TIM2->ARR = 10 - 1;
+
+    TIM2->CR1 = TIM_CR1_CEN | TIM_CR1_ARPE;
+
+    TIM2->DIER |= TIM_DIER_UIE;
+
+    NVIC_SetPriority(TIM2_IRQn, 0);
+    NVIC_EnableIRQ(TIM2_IRQn);
+
+    TIM2->CR1 |= TIM_CR1_CEN;
+}
+
+void TIM2_IRQHandler(void) {
+    RTC_IRQHandlerMs(TIM2);
 }
 
 /**
@@ -195,24 +224,6 @@ static void USART1_Init(void) {
     huart1.Init.OverSampling = UART_OVERSAMPLING_16;
     if (HAL_UART_Init(&huart1) != HAL_OK)
         Error_Handler();
-}
-
-/**
-  * @brief GPIO Initialization Function
-  * @retval None
-  */
-static void LED_Init(void) {
-    GPIO_InitTypeDef GPIO_InitStruct = {0};
-
-    __HAL_RCC_GPIOC_CLK_ENABLE();
-
-    HAL_GPIO_WritePin(LED, GPIO_PIN_RESET);
-
-    GPIO_InitStruct.Pin = LED_Pin;
-    GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-    GPIO_InitStruct.Pull = GPIO_PULLDOWN;
-    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-    HAL_GPIO_Init(LED_GPIO_Port, &GPIO_InitStruct);
 }
 
 /**
