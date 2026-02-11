@@ -20,6 +20,7 @@
 #include <stdbool.h>
 
 #include "mpu6050.h"
+#include "reg_dev.h"
 
 #include "rtc.h"
 
@@ -27,6 +28,11 @@ I2C_HandleTypeDef hi2c1;
 UART_HandleTypeDef huart1;
 
 MPU6050_t mpu6050;
+
+uint8_t devStatus;           // Статус инициализации
+uint16_t packetSize = 42;    // Размер пакета DMP
+uint16_t fifoCount;          // Количество байт в FIFO
+uint8_t fifoBuffer[64];
 
 static void Led_Init(void);
 static void SystemClock_Config(void);
@@ -53,24 +59,30 @@ int main(void) {
     mpu6050.addr = MPU6050_DEFAULT_ADDRESS;
 
     MPU6050_Reset(&mpu6050);
-    HAL_Delay(50);
+    HAL_Delay(100);
+    MPU6050_ResetDMP(&mpu6050);
+    HAL_Delay(100);
 
     MPU6050_GetDeviceID(&mpu6050);
-
+    if (mpu6050.id == 0x34)
+        printf("MPU6050 initialization is successful");
+    else
+        printf("MPU6050 initialization is failed, device id = %x\r\n", mpu6050.id);
     MPU6050_SetClockSource(&mpu6050, CLOCK_PLL_XGYRO);
-
-    MPU6050_SetFullScaleAccelRange(&mpu6050, A16G);
-    MPU6050_SetFullScaleGyroRange(&mpu6050, G1000DPS);
-
-    MPU6050_SetSleepEnabled(&mpu6050, false);
-
-    MPU6050_SetTempSensorEnabled(&mpu6050, true);
-
+    MPU6050_SetIntEnabled(&mpu6050, false);
+    MPU6050_SetFIFOEnabled(&mpu6050, false);
+    MPU6050_SetFullScaleAccelRange(&mpu6050, A2G);
+    MPU6050_SetExternalFrameSync(&mpu6050, MPU6050_EXT_SYNC_GYRO_XOUT_L);
+    MPU6050_SetClockSource(&mpu6050, CLOCK_PLL_XGYRO);
+    MPU6050_SetRate(&mpu6050, 4);
+    MPU6050_WriteProgMemoryBlock(&mpu6050, dmpMemory, MPU6050_DMP_CODE_SIZE, 0, 0, true);
+    MPU6050_SetDMPConfig1(&mpu6050, 0x03);
+    MPU6050_SetFullScaleGyroRange(&mpu6050, G2000DPS);
+    MPU6050_SetFIFOEnabled(&mpu6050, true);
+    MPU6050_ResetFIFO(&mpu6050);
     MPU6050_SetDMPEnabled(&mpu6050, true);
 
     MPU6050_AverageCalibration(&mpu6050);
-
-    MPU6050_SetIntDataReadyEnabled(&mpu6050, true);
 
     HAL_GPIO_WritePin(LED, GPIO_PIN_SET);
 
@@ -88,15 +100,22 @@ static void loop(void) {
     uint64_t time;
     // ReSharper disable once CppDFAEndlessLoop
     while (true) {
-        if (MPU6050_GetIntDataReadyStatus(&mpu6050) == true) {
+        fifoCount = MPU6050_GetFIFOCount(&mpu6050);
+        if (fifoCount >= 42) {
+            MPU6050_GetFIFOBytes(&mpu6050, fifoBuffer, packetSize);
+            Quaternion q;
+            MPU6050_DMPGetQuaternion(&q, fifoBuffer);
+
             MPU6050_GetAcceleration(&mpu6050, &acc_x, &acc_y, &acc_z);
             MPU6050_GetRotation(&mpu6050, &gyr_x, &gyr_y, &gyr_z);
             temperature = MPU6050_GetTemperature(&mpu6050);
+
             time = RTC_GetUnixTimeMs();
-            printf("time = %llu, acc x = %0.3f, y = %0.3f, z = %0.3f; gyr x = %0.3f, y = %0.3f, z = %0.3f; temperature = %0.3f\r\n",
-                    time, acc_x, acc_y, acc_z, gyr_x, gyr_y, gyr_z, temperature);
+
+            printf("time = %llu, q w = %f, x = %f, y = %f, z = %f; acc x = %0.3f, y = %0.3f, z = %0.3f; gyr x = %0.3f, y = %0.3f, z = %0.3f; temperature = %0.3f\r\n",
+                    time, q.w, q.x, q.y, q.z, acc_x, acc_y, acc_z, gyr_x, gyr_y, gyr_z, temperature);
         }
-        HAL_Delay(200);
+        HAL_Delay(1);
     }
 }
 
